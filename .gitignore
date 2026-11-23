@@ -1,0 +1,26 @@
+# Secrets & runtime state
+.env
+*.env
+!*.env.example
+*.key
+*.pem
+*.jks
+serviceAccount.json
+.nc_compose_env
+
+# Backups & databases
+backups/
+*.tar.gz
+*.sql
+*.sql.gz
+*.db
+*.sqlite
+state/
+*.log
+*.log.old
+
+# Python caches
+__pycache__/
+*.pyc
+.venv/
+venv/

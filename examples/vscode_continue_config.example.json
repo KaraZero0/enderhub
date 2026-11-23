@@ -1,0 +1,28 @@
+{
+  "models": [
+    {
+      "title": "EnderHub — Llama 3.2 3B (GPU VRAM)",
+      "provider": "ollama",
+      "model": "llama3.2:3b",
+      "apiBase": "http://<TAILSCALE_IP>:11434"
+    },
+    {
+      "title": "EnderHub — Qwen 2.5 Coder 7B",
+      "provider": "ollama",
+      "model": "qwen2.5-coder:7b",
+      "apiBase": "http://<TAILSCALE_IP>:11434"
+    },
+    {
+      "title": "EnderHub — DeepSeek R1 8B (Reasoning)",
+      "provider": "ollama",
+      "model": "deepseek-r1:8b",
+      "apiBase": "http://<TAILSCALE_IP>:11434"
+    }
+  ],
+  "tabAutocompleteModel": {
+    "title": "EnderHub — Qwen 2.5 Coder 1.5B (Fast Autocomplete)",
+    "provider": "ollama",
+    "model": "qwen2.5-coder:1.5b",
+    "apiBase": "http://<TAILSCALE_IP>:11434"
+  }
+}

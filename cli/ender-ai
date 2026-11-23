@@ -1,0 +1,147 @@
+#!/usr/bin/env python3
+"""
+ender-ai — Lightweight streaming CLI client for remote/local Ollama GPU inference
+Includes automatic 30-minute terminal session memory and interactive chat mode.
+
+Configuration:
+  export OLLAMA_URL="http://<TAILSCALE_IP>:11434"
+  export ENDER_AI_MODEL="llama3.2:3b"
+"""
+import argparse
+import json
+import os
+import sys
+import time
+import urllib.request
+
+OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://127.0.0.1:11434")
+DEFAULT_MODEL = os.environ.get("ENDER_AI_MODEL", "ender-assistant:latest")
+SESSION_FILE = f"/tmp/ender_ai_session_{os.getuid()}.json"
+SESSION_TTL_SECONDS = 1800  # 30 minutes
+
+
+def load_session() -> list:
+    if not os.path.exists(SESSION_FILE):
+        return []
+    try:
+        if time.time() - os.path.getmtime(SESSION_FILE) > SESSION_TTL_SECONDS:
+            os.remove(SESSION_FILE)
+            return []
+        with open(SESSION_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            return data[-12:] if isinstance(data, list) else []
+    except Exception:
+        return []
+
+
+def save_session(messages: list):
+    try:
+        with open(SESSION_FILE, "w", encoding="utf-8") as f:
+            json.dump(messages[-12:], f, ensure_ascii=False)
+        os.chmod(SESSION_FILE, 0o600)
+    except Exception:
+        pass
+
+
+def reset_session():
+    if os.path.exists(SESSION_FILE):
+        os.remove(SESSION_FILE)
+    print("🧹 Terminal session memory cleared.")
+
+
+def list_models():
+    req = urllib.request.Request(f"{OLLAMA_URL}/api/tags")
+    with urllib.request.urlopen(req, timeout=10) as resp:
+        data = json.loads(resp.read().decode("utf-8"))
+        print(f"Available models on {OLLAMA_URL}:")
+        for m in data.get("models", []):
+            size_gb = m.get("size", 0) / (1024**3)
+            print(f"  - {m['name']:<26} ({size_gb:.1f} GB)")
+
+
+def stream_chat(model: str, messages: list) -> str:
+    payload = json.dumps({
+        "model": model,
+        "messages": messages,
+        "keep_alive": "24h",
+        "stream": True
+    }).encode("utf-8")
+    req = urllib.request.Request(
+        f"{OLLAMA_URL}/api/chat",
+        data=payload,
+        headers={"Content-Type": "application/json"},
+        method="POST"
+    )
+    full_reply = []
+    with urllib.request.urlopen(req, timeout=120) as resp:
+        for line in resp:
+            if not line.strip():
+                continue
+            chunk = json.loads(line.decode("utf-8"))
+            token = chunk.get("message", {}).get("content", "")
+            print(token, end="", flush=True)
+            full_reply.append(token)
+            if chunk.get("done"):
+                print()
+                break
+    return "".join(full_reply)
+
+
+def interactive_loop(model: str):
+    print(f"=== EnderHub Remote AI Chat ({model}) — type 'exit' or Ctrl+C to quit ===")
+    history = load_session()
+    while True:
+        try:
+            user_in = input("\n\033[1;32mYou >\033[0m ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print("\nBye!")
+            break
+        if not user_in:
+            continue
+        if user_in.lower() in ("exit", "esci", "quit"):
+            break
+        if user_in.lower() in ("reset", "/reset", "/clear"):
+            history = []
+            reset_session()
+            continue
+        history.append({"role": "user", "content": user_in})
+        print("\033[1;36mEnderAI >\033[0m ", end="", flush=True)
+        reply = stream_chat(model, history)
+        history.append({"role": "assistant", "content": reply})
+        save_session(history)
+
+
+def main():
+    parser = argparse.ArgumentParser(description="EnderHub Remote Ollama CLI")
+    parser.add_argument("-m", "--model", default=DEFAULT_MODEL, help=f"Ollama model (default: {DEFAULT_MODEL})")
+    parser.add_argument("-r", "--reset", action="store_true", help="Clear terminal session memory")
+    parser.add_argument("--models", action="store_true", help="List available models on Ollama host")
+    parser.add_argument("prompt", nargs="*", help="Prompt or question")
+    args = parser.parse_args()
+
+    if args.reset:
+        reset_session()
+        if not args.prompt:
+            return
+
+    if args.models:
+        list_models()
+        return
+
+    prompt_text = " ".join(args.prompt).strip()
+    if not prompt_text and not sys.stdin.isatty():
+        prompt_text = sys.stdin.read().strip()
+
+    if not prompt_text:
+        interactive_loop(args.model)
+        return
+
+    history = load_session()
+    history.append({"role": "user", "content": prompt_text})
+    reply = stream_chat(args.model, history)
+    history.append({"role": "assistant", "content": reply})
+    save_session(history)
+
+
+if __name__ == "__main__":
+    main()
